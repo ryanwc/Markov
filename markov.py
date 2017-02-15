@@ -2,34 +2,145 @@ import fractions
 
 
 def answer(m):
+    """Manipulate and return info about a 2D matrix of ints representing an
+    Absorbing Markov Chain.
 
-    # construct T, the transition matrix of the given matrix
-    # note, T has floating points representing probabilities
+    Arguments:
+        m -- a list of lists of ints where m[i][j] is the number of times
+            state i has been observed transitioning to state j.
+
+    Return:
+    A list of ints with the first numberOfTerminalStates slots containing the
+    numerator of the exact fraction probability of starting in state 0 and
+    ending up in that terminal state, and with the last slot containing the
+    lowest common denominator between each terminal state's exact
+    fraction probability.
+
+    Example A:
+        Input:
+            (int) m = [[0, 2, 1, 0, 0],
+                       [0, 0, 0, 3, 4],
+                       [0, 0, 0, 0, 0],
+                       [0, 0, 0, 0, 0],
+                       [0, 0, 0, 0, 0]]
+        Output:
+            (int list) [7, 6, 8, 21]
+
+    Example B:
+        Input:
+            (int) m = [[0, 1, 0, 0, 0, 1],
+                       [4, 0, 0, 3, 2, 0],
+                       [0, 0, 0, 0, 0, 0],
+                       [0, 0, 0, 0, 0, 0],
+                       [0, 0, 0, 0, 0, 0],
+                       [0, 0, 0, 0, 0, 0]]
+        Output:
+            (int list) [0, 3, 2, 9, 14]
+
+    Constraints and Assumptions:
+    1) The matrix is at most 10 by 10. It should work for larger, but it has
+    not been tested on larger so no guarantees.
+    2) m is composed only of nonnegative ints.
+    3) There is always an observed path from the current state to a terminal state.
+    4) The denominator for last slot of the returned list will fits within
+    a signed 32-bit integer during the calculation, as long as the fraction is
+    simplified regularly.
+    """
     transition_info = get_transition_matrix_info(m)
-    T = transition_info[0]
-    tr = transition_info[1]
-    tm = transition_info[2]
+    T = transition_info[0] # canonical form, floating point probabilities
+    tr = transition_info[1] # num of transition states
+    tm = transition_info[2] # num of terminal states
 
+    # check if we can end early
     if transition_info[3]:
-        # zero is terminal, add other terminals at 0 if necessary
-        # avoids unnecessarily calculating absorptions probabilities
+        # zero is terminal, add other terminals at 0 prob if necessary
         probabilities = [1]
         for x in range(tm-1):
             probabilities.append(0)
         probabilities.append(1)
         return probabilities
 
-    # construct R, the probabilities of transitions -> terminals
-    # where R = firs tr rows of T and last tm columns of T
+    R = construct_R(T, tr, tm)  # subset of canonical form of T
+    N = construct_N(T, tr)  # fundamental form of T
+    B = standard_matrix_product(N, R)  # probabilities of ending in each
+    # terminal state when starting from each transition state
+
+    # return formatted probabilities of ending in each terminal starting from 0
+    return format_terminal_probabilities(B, 0)
+
+# helpers
+
+
+def format_terminal_probabilities(B, transition_state):
+    """Format and return probabilities for ending in each terminal state when
+    starting from a particular state within an Absorbing Markov Chain.
+
+    Arguments:
+        B -- the list of lists of floats where B[i][j] is the probability of
+        ending in state j when starting from i for an Absorbing Markov Chain
+        transition_state -- the transition state to start from
+    Return:
+        A list of ints with the first numberOfTerminalStates slots containing
+        the numerator of the exact fraction probability of starting in state
+        transition_state ending up in that terminal state, and with the last
+        slot containing the lowest common denominator between each terminal
+        state's exact fraction probability
+    """
+    terminal_probabilities = B[transition_state]
+    tm = len(terminal_probabilities)
+    lcm = 1
+    for state in range(tm):
+        terminal_probabilities[state] = fractions.Fraction(terminal_probabilities[state]).limit_denominator()
+        if terminal_probabilities[state] != 0:
+            if state == 1:
+                lcm = terminal_probabilities[state].denominator
+            if state >= 1:
+                lcm = get_lcm(lcm, terminal_probabilities[state].denominator)
+
+    for state in range(tm):
+        terminal_probabilities[state] = terminal_probabilities[state].numerator * lcm / terminal_probabilities[state].denominator
+    terminal_probabilities.append(lcm)
+    return terminal_probabilities
+
+def construct_R(T, tr, tm):
+    """Construct R, the top-right quadrant of the canonical form T of
+    an Absorbing Markov Chain.
+
+    R is nonzero and R[i][j] gives the probability of moving from
+    transition state i to terminal state j.
+
+    Arguments:
+        T -- the canonical form of an Absorbing Markov Chain, as
+            as list of lists of floats
+        tr -- int, the number of transition states in T
+        tm -- int, the number of terminal states in T
+    Return:
+        R of T, as a list of lists of floats
+    """
     R = []
     for row in range(tr):
         R.append([])
         for col in range(len(T)-tm, len(T)):
             R[row].append(T[row][col])
 
-    # construct N, fundamental matrix of T
-    # where N = [identity matrix - (Q = first tr rows and tr cols of T)] ^ -1
-    N = []
+    return R
+
+
+def construct_N(T, tr):
+    """Construct the fundamental matrix N from the canonical form T of
+    an Absorbing Markov Chain.
+
+    N[i][j] gives the expected number of times the chain is in state j
+    given that the chain started in state i.
+
+    Arguments:
+        T -- the transition matrix for the Absorbing Markov Chain
+            represented as a list of lists of floats
+        tr -- an int representing the number of transition states
+            in T
+    Return:
+        The fundamental matrix of T, as a list of lists of floats
+    """
     I = [[0]*tr for x in range(tr)]
     for x in range(tr):
         I[x][x] = 1
@@ -39,30 +150,7 @@ def answer(m):
         for col in range(tr):
             IminusQ[row].append(I[row][col] - T[row][col])
 
-    N = invert(IminusQ) # not giving right answer
-
-    # multiply N by R to get probabilities of ending in each terminal state
-    # when starting from each transition state
-    B = standard_matrix_product(N, R)
-
-    # construct list of integer probabilities when starting from state 0
-    B0 = B[0]
-    lcm = 1
-    for state in range(tm):
-        B0[state] = fractions.Fraction(B0[state]).limit_denominator()
-        if B0[state] != 0:
-            if state == 1:
-                lcm = B0[state].denominator
-            if state >= 1:
-                lcm = get_lcm(lcm, B0[state].denominator)
-
-    for state in range(tm):
-        B0[state] = B0[state].numerator * lcm / B0[state].denominator
-    B0.append(lcm)
-
-    return B0
-
-# helpers
+    return invert(IminusQ)
 
 
 def invert(A):
@@ -80,7 +168,7 @@ def invert(A):
 
 
 def standard_matrix_product(A, B):
-    """Multiply matrix A by matrix B"""
+    """Multiply matrix A by matrix B and return the result"""
     rows = len(A)
     cols = len(B[0])
     result = [[0]*cols for x in range(rows)]
@@ -97,13 +185,13 @@ def standard_matrix_product(A, B):
 
 
 def get_lcm(x, y):
-    """Get least common multiple of x and y.
+    """Return the least common multiple of x and y.
     Works by first getting the greatest common divisor."""
     return x * y / get_gcd(x, y)
 
 
 def get_gcd(x, y):
-    """Get greatest common divisor or x and y"""
+    """Return the greatest common divisor or x and y"""
     while y != 0:
        z = y
        y = x % y
