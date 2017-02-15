@@ -46,13 +46,13 @@ def answer(m):
     a signed 32-bit integer during the calculation, as long as the fraction is
     simplified regularly.
     """
-    transition_info = get_transition_matrix_info(m)
-    T = transition_info[0] # canonical form, floating point probabilities
-    tr = transition_info[1] # num of transition states
-    tm = transition_info[2] # num of terminal states
+    canonical_form_info = get_canonical_form(m)
+    T = canonical_form_info[0] # canonical form, floating point probabilities
+    tr = canonical_form_info[1] # num of transition states
+    tm = canonical_form_info[2] # num of terminal states
 
     # check if we can end early
-    if transition_info[3]:
+    if canonical_form_info[3]:
         # zero is terminal, add other terminals at 0 prob if necessary
         probabilities = [1]
         for x in range(tm-1):
@@ -199,15 +199,34 @@ def get_gcd(x, y):
     return x
 
 
-def get_transition_matrix_info(matrix):
-    """Get the transition matrix and related info for the given
-    2D matrix.
-    of matrix[state1][state2] = observed times Runs in n^2 time.
-    Returns tuple of one matrix and two integers
-    Matrix has transition states as first rows
-    (Transition matrix, num transition states, num absorbtion states)"""
-    tm = 0
-    tr = 0
+def get_canonical_form(matrix):
+    """Return the canonical form and related info for the given matrix
+    representing an Absorbing Markov Chain.
+
+    Note that the argument matrix does not have probabilities, but rather
+    ints showing a sampling with the number of times each state has
+    transitioned to other states.
+
+    Also note that re-ordering of the states may occur, but that relative
+    order of transition states and terminal states remains constant.
+    That is, if Si and Sj are both terminal or transitional, their
+    relative ordering will hold from observation matrix -> canonical form.
+    But, if one Si and Sj is terminal and one is transitional, their relative
+    ordering may not hold from observation matrix -> canonical form.
+
+    Arguments:
+        matrix -- a list of lists of ints where matrix[i][j] is the number
+            of times state i has been observed transitioning to state j
+    Return:
+        A 4-length tuple with the following entries:
+         tuple[0] -- the canonical form as a list of lists of floats where
+            tuple[0][i][j] is the observed probability that state i will
+            transition to state j
+         tuple[1] -- int, the number of transition states
+         tuple[2] -- int, the number of terminal states
+         tuple[3] -- boolean, true if state 0 is a terminal state,
+            false otherwise
+    """
     T_with_old = []
     transitions = []
     terminals = []
